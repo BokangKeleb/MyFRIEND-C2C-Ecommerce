@@ -6,3 +6,4 @@ _database/
 
 config/database.php
 config/mail.php
+config/payment.php
