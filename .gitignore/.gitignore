@@ -1,8 +1,0 @@
-.vscode/
-uploads/
-_database/
-*.sql
-*.zip
-
-config/database.php
-config/mail.php
