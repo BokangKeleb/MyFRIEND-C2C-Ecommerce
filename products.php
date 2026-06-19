@@ -111,35 +111,6 @@ mysqli_stmt_execute($stmt);
 // Get the product results
 $result = mysqli_stmt_get_result($stmt);
 
-$hasSearch = $search !== '';
-$hasCategory = $category !== '' && in_array($category, $validCategories, true);
-$like = '%' . $search . '%';
-
-if ($hasSearch && $hasCategory) {
-    $sql = 'SELECT * FROM products
-            WHERE (title LIKE ? OR description LIKE ?)
-              AND category = ?
-            ORDER BY productID DESC';
-    $stmt = mysqli_prepare($conn, $sql);
-    mysqli_stmt_bind_param($stmt, 'sss', $like, $like, $category);
-} elseif ($hasSearch) {
-    $sql = 'SELECT * FROM products
-            WHERE title LIKE ? OR description LIKE ?
-            ORDER BY productID DESC';
-    $stmt = mysqli_prepare($conn, $sql);
-    mysqli_stmt_bind_param($stmt, 'ss', $like, $like);
-} elseif ($hasCategory) {
-    $sql = 'SELECT * FROM products
-            WHERE category = ?
-            ORDER BY productID DESC';
-    $stmt = mysqli_prepare($conn, $sql);
-    mysqli_stmt_bind_param($stmt, 's', $category);
-} else {
-    $stmt = mysqli_prepare($conn, 'SELECT * FROM products ORDER BY productID DESC');
-}
-
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -164,6 +135,10 @@ $result = mysqli_stmt_get_result($stmt);
             <div class="alert alert-warning">You cannot add your own product to your cart.</div>
         <?php elseif (in_array($_GET['cart'] ?? '', ['invalid', 'missing'], true)): ?>
             <div class="alert alert-danger">The selected product could not be added.</div>
+        <?php elseif (($_GET['cart'] ?? '') === 'out'): ?>
+            <div class="alert alert-warning">That product is currently out of stock.</div>
+        <?php elseif (($_GET['cart'] ?? '') === 'max'): ?>
+            <div class="alert alert-warning">You already have the maximum available quantity in your cart.</div>
         <?php endif; ?>
 
         <form method="get" class="mb-5">
@@ -262,7 +237,10 @@ $result = mysqli_stmt_get_result($stmt);
             <?php endif; ?>
 
             <?php while ($product = mysqli_fetch_assoc($result)): ?>
-                <?php $isOwnProduct = isset($_SESSION['userID']) && (int)$_SESSION['userID'] === (int)$product['sellerID']; ?>
+                <?php
+                $isOwnProduct = isset($_SESSION['userID']) && (int)$_SESSION['userID'] === (int)$product['sellerID'];
+                $availableQuantity = max(0, (int)($product['availableQuantity'] ?? 0));
+                ?>
                 <div class="col-md-4 mb-4">
                     <div class="card product-card h-100">
                         <img src="<?php echo app_url('/uploads/' . rawurlencode($product['image'])); ?>" class="card-img-top" alt="<?php echo h($product['title']); ?>">
@@ -271,6 +249,11 @@ $result = mysqli_stmt_get_result($stmt);
                             <h5 class="card-title"><?php echo h($product['title']); ?></h5>
                             <p class="card-text"><?php echo h($product['description']); ?></p>
                             <p><strong>R<?php echo number_format((float)$product['price'], 2); ?></strong></p>
+                            <?php if ($availableQuantity > 0): ?>
+                                <p><strong>Available:</strong> <?php echo $availableQuantity; ?></p>
+                            <?php else: ?>
+                                <p><span class="badge bg-danger">Out of Stock</span></p>
+                            <?php endif; ?>
                             <p>Category: <?php echo h($product['category']); ?></p>
                             <p>Shop: <?php echo h($product['shop_name']); ?></p>
 
@@ -298,6 +281,8 @@ $result = mysqli_stmt_get_result($stmt);
                                     <button class="btn btn-secondary" disabled>Admin View Only</button>
                                 <?php elseif ($isOwnProduct): ?>
                                     <button class="btn btn-secondary" disabled>Your Product</button>
+                                <?php elseif ($availableQuantity < 1): ?>
+                                    <button class="btn btn-secondary" disabled>Out of Stock</button>
                                 <?php elseif (!isset($_SESSION['userID'])): ?>
                                     <a class="btn btn-shop" href="<?php echo app_url('/login.php'); ?>">Login to Add to Cart</a>
                                 <?php else: ?>
