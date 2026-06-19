@@ -25,6 +25,7 @@ function load_cart_items(mysqli $conn, int $userID): array
             p.image,
             p.shop_name,
             p.sellerID,
+            p.availableQuantity,
             u.collectionAvailable,
             u.collectionAddress
         FROM cart c
@@ -55,6 +56,19 @@ $items = load_cart_items($conn, $userID);
 if (!$items) {
     redirect_to('/cart.php');
 }
+
+$hasStockProblems = false;
+
+foreach ($items as &$item) {
+    $item['availableQuantity'] = max(0, (int)($item['availableQuantity'] ?? 0));
+    $item['quantity'] = (int)$item['quantity'];
+    $item['stockProblem'] = $item['availableQuantity'] < 1 || $item['quantity'] > $item['availableQuantity'];
+
+    if ($item['stockProblem']) {
+        $hasStockProblems = true;
+    }
+}
+unset($item);
 
 /*
  * Collection is available only when every seller represented
@@ -116,6 +130,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Collection is unavailable for one or more products in your cart.';
     }
 
+    if ($error === '' && $hasStockProblems) {
+        $error = 'One or more products in your cart do not have enough available quantity. Please update your cart.';
+    }
+
     if ($error === '') {
         if ($fulfilmentMethod === 'Collection' && $deliveryAddress === '') {
             $deliveryAddress = 'Collection arranged directly with the seller.';
@@ -146,10 +164,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $insert = mysqli_prepare($conn, $sql);
 
+            $decreaseStock = mysqli_prepare(
+                $conn,
+                'UPDATE products
+                 SET availableQuantity = availableQuantity - ?
+                 WHERE productID = ?
+                   AND availableQuantity >= ?'
+            );
+
             foreach ($items as $index => $item) {
                 $productID = (int)$item['productID'];
                 $quantity = (int)$item['quantity'];
                 $lineAmount = (float)$item['lineTotal'];
+
+                mysqli_stmt_bind_param(
+                    $decreaseStock,
+                    'iii',
+                    $quantity,
+                    $productID,
+                    $quantity
+                );
+                mysqli_stmt_execute($decreaseStock);
+
+                if (mysqli_stmt_affected_rows($decreaseStock) !== 1) {
+                    throw new RuntimeException('stock_unavailable');
+                }
+
                 $transactionReference = $checkoutReference . '-' . ($index + 1);
                 $types = 'iiid' . str_repeat('s', 11);
 
@@ -196,7 +236,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect_to('/orders.php?order=placed');
         } catch (Throwable $exception) {
             mysqli_rollback($conn);
-            $error = 'The order could not be created. Please try again.';
+            $error = $exception->getMessage() === 'stock_unavailable'
+                ? 'One or more products no longer have enough stock. Please update your cart.'
+                : 'The order could not be created. Please try again.';
         }
     }
 }
@@ -227,7 +269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <strong><?php echo h($item['title']); ?></strong><br>
                                 <small>
                                     <?php echo h($item['shop_name']); ?> ·
-                                    Quantity <?php echo (int)$item['quantity']; ?>
+                                    Quantity <?php echo (int)$item['quantity']; ?> · Available <?php echo (int)$item['availableQuantity']; ?>
                                 </small>
                             </div>
                             <strong>R<?php echo number_format((float)$item['lineTotal'], 2); ?></strong>
@@ -247,6 +289,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <?php if ($error !== ''): ?>
                         <div class="alert alert-danger"><?php echo h($error); ?></div>
+                    <?php endif; ?>
+
+                    <?php if ($hasStockProblems): ?>
+                        <div class="alert alert-warning">
+                            One or more products in your cart exceed the available quantity.
+                            Go back to your cart and update the quantity before checkout.
+                        </div>
                     <?php endif; ?>
 
                     <form method="post" id="checkoutForm">
@@ -411,7 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label for="paymentChoice" class="form-label">Payment Method</label>
                             <select name="paymentChoice" id="paymentChoice" class="form-select" required>
                                 <option value="">Select a payment method</option>
-                                <option value="Online Payment" <?php echo ($_POST['paymentChoice'] ?? '') === 'Online Payment' ? 'selected' : ''; ?>>Online Card Payment</option>
+                                <option value="Online Payment" <?php echo ($_POST['paymentChoice'] ?? '') === 'Online Payment' ? 'selected' : ''; ?>>Online Payment via PayFast</option>
                                 <option value="Cash" <?php echo ($_POST['paymentChoice'] ?? '') === 'Cash' ? 'selected' : ''; ?>>Cash on Delivery / Collection</option>
                             </select>
                         </div>
@@ -422,11 +471,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
 
                         <div class="alert alert-secondary" id="paymentNotice">
-                            Online payments will continue to the card-payment page.
+                            Online payments will continue to the secure PayFast payment page.
                         </div>
 
-                        <button type="submit" class="btn btn-shop" id="checkoutButton">
-                            Continue
+                        <button type="submit" class="btn btn-shop" id="checkoutButton" <?php echo $hasStockProblems ? 'disabled' : ''; ?>>
+                            <?php echo $hasStockProblems ? 'Update Cart First' : 'Continue'; ?>
                         </button>
                     </form>
                 </div>
@@ -529,6 +578,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             /*
              * Update the payment instructions and button.
              */
+            if (checkoutButton.disabled) {
+                return;
+            }
+
             if (isCash) {
 
                 paymentNotice.textContent =
@@ -544,7 +597,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
 
                 paymentNotice.textContent =
-                    'You will continue to the online card-payment page.';
+                    'You will continue to the secure PayFast payment page.';
 
                 checkoutButton.textContent =
                     'Proceed to Payment';
