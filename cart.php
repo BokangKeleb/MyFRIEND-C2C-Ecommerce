@@ -15,7 +15,7 @@ if (($_SESSION['role'] ?? '') === 'admin') {
 $userID = (int)$_SESSION['userID'];
 $sql = 'SELECT c.cartID, c.quantity, c.addedAt,
                p.productID, p.title, p.description, p.price, p.image, p.shop_name,
-               p.sellerID
+               p.sellerID, p.availableQuantity
         FROM cart c
         JOIN products p ON p.productID = c.productID
         WHERE c.userID = ?
@@ -27,8 +27,18 @@ $result = mysqli_stmt_get_result($stmt);
 
 $items = [];
 $total = 0.0;
+$hasStockProblems = false;
+
 while ($row = mysqli_fetch_assoc($result)) {
-    $row['subtotal'] = (float)$row['price'] * (int)$row['quantity'];
+    $row['availableQuantity'] = max(0, (int)($row['availableQuantity'] ?? 0));
+    $row['quantity'] = (int)$row['quantity'];
+    $row['stockProblem'] = $row['availableQuantity'] < 1 || $row['quantity'] > $row['availableQuantity'];
+
+    if ($row['stockProblem']) {
+        $hasStockProblems = true;
+    }
+
+    $row['subtotal'] = (float)$row['price'] * $row['quantity'];
     $total += $row['subtotal'];
     $items[] = $row;
 }
@@ -61,6 +71,16 @@ while ($row = mysqli_fetch_assoc($result)) {
         <div class="alert alert-success">Your cart was cleared.</div>
     <?php endif; ?>
 
+    <?php if (($_GET['stock'] ?? '') === 'adjusted'): ?>
+        <div class="alert alert-warning">Some quantities were adjusted to match available stock.</div>
+    <?php endif; ?>
+
+    <?php if ($hasStockProblems): ?>
+        <div class="alert alert-warning">
+            One or more cart items exceed available stock. Update the cart before checkout.
+        </div>
+    <?php endif; ?>
+
     <?php if (!$items): ?>
         <div class="card p-5 text-center">
             <h3>Your cart is empty</h3>
@@ -79,6 +99,7 @@ while ($row = mysqli_fetch_assoc($result)) {
                         <th>Product</th>
                         <th>Shop</th>
                         <th>Price</th>
+                        <th>Available</th>
                         <th style="width:120px">Quantity</th>
                         <th>Subtotal</th>
                         <th>Action</th>
@@ -93,11 +114,21 @@ while ($row = mysqli_fetch_assoc($result)) {
                                 <div>
                                     <strong><?php echo h($item['title']); ?></strong><br>
                                     <a class="small" href="<?php echo app_url('/buy-product.php?id=' . $item['productID']); ?>">View details</a>
+                                    <?php if ($item['stockProblem']): ?>
+                                        <br><small class="text-danger">Stock problem</small>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </td>
                         <td><?php echo h($item['shop_name']); ?></td>
                         <td>R<?php echo number_format((float)$item['price'], 2); ?></td>
+                        <td>
+                            <?php if ($item['availableQuantity'] > 0): ?>
+                                <?php echo (int)$item['availableQuantity']; ?>
+                            <?php else: ?>
+                                <span class="badge bg-danger">Out</span>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <input
                                 form="updateCartForm"
@@ -105,7 +136,7 @@ while ($row = mysqli_fetch_assoc($result)) {
                                 name="quantities[<?php echo (int)$item['cartID']; ?>]"
                                 value="<?php echo (int)$item['quantity']; ?>"
                                 min="1"
-                                max="99"
+                                max="<?php echo max(1, (int)$item['availableQuantity']); ?>"
                                 class="form-control"
                             >
                         </td>
@@ -132,7 +163,12 @@ while ($row = mysqli_fetch_assoc($result)) {
                     </div>
 
                     <button form="updateCartForm" type="submit" class="btn btn-outline-dark mb-2">Update Cart</button>
-                    <a class="btn btn-shop mb-2" href="<?php echo app_url('/cart-checkout.php'); ?>">Proceed to Checkout</a>
+
+                    <?php if ($hasStockProblems): ?>
+                        <button class="btn btn-secondary mb-2" disabled>Update Cart Before Checkout</button>
+                    <?php else: ?>
+                        <a class="btn btn-shop mb-2" href="<?php echo app_url('/cart-checkout.php'); ?>">Proceed to Checkout</a>
+                    <?php endif; ?>
 
                     <form method="post" action="<?php echo app_url('/clear-cart.php'); ?>" onsubmit="return confirm('Clear all products from your cart?');">
                         <input type="hidden" name="csrf_token" value="<?php echo h(csrf_token()); ?>">
