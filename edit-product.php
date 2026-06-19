@@ -1,58 +1,63 @@
 <?php
 require_once __DIR__ . '/config/app.php';
 
-// Start session only if no session exists
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-// Include database connection
 include 'config/database.php';
 
-// Check if user is logged in
 if (!isset($_SESSION['userID'])) {
     redirect_to('/login.php');
 }
 
-// Only sellers can edit products
 if ($_SESSION['role'] != 'seller') {
     die("Access Denied");
 }
 
-// Check product ID
 if (!isset($_GET['id'])) {
     redirect_to('/my-products.php');
 }
 
-// Get product ID and seller ID
 $productID = mysqli_real_escape_string($conn, $_GET['id']);
-$sellerID = $_SESSION['userID'];
+$sellerID = (int)$_SESSION['userID'];
 
-// Get product belonging to current seller only
 $sql = "SELECT * FROM products
         WHERE productID = '$productID'
         AND sellerID = '$sellerID'";
 $result = mysqli_query($conn, $sql);
 $product = mysqli_fetch_assoc($result);
 
-// Stop if product is not found or does not belong to seller
 if (!$product) {
     die("Access Denied");
 }
 
-// Update product
 if (isset($_POST['update'])) {
 
-    $title = mysqli_real_escape_string($conn, $_POST['title']);
-    $price = mysqli_real_escape_string($conn, $_POST['price']);
-    $description = mysqli_real_escape_string($conn, $_POST['description']);
-    $category = mysqli_real_escape_string($conn, $_POST['category']);
+    $title = mysqli_real_escape_string($conn, trim($_POST['title'] ?? ''));
+    $price = mysqli_real_escape_string($conn, trim($_POST['price'] ?? ''));
+    $description = mysqli_real_escape_string($conn, trim($_POST['description'] ?? ''));
+    $category = mysqli_real_escape_string($conn, trim($_POST['category'] ?? ''));
+    $availableQuantity = filter_input(INPUT_POST, 'availableQuantity', FILTER_VALIDATE_INT);
+
+    if (!$availableQuantity && $availableQuantity !== 0) {
+        $availableQuantity = 0;
+    }
+
+    if ($availableQuantity < 0) {
+        $availableQuantity = 0;
+    }
+
+    if ($availableQuantity > 9999) {
+        $availableQuantity = 9999;
+    }
 
     $updateSQL = "UPDATE products
                   SET title = '$title',
                       price = '$price',
                       description = '$description',
-                      category = '$category'
+                      category = '$category',
+                      availableQuantity = '$availableQuantity'
                   WHERE productID = '$productID'
                   AND sellerID = '$sellerID'";
 
@@ -86,17 +91,23 @@ if (isset($_POST['update'])) {
 
         <div class="mb-3">
             <label class="form-label">Product Title</label>
-            <input type="text" name="title" class="form-control" value="<?php echo $product['title']; ?>" required>
+            <input type="text" name="title" class="form-control" value="<?php echo h($product['title']); ?>" required>
         </div>
 
         <div class="mb-3">
             <label class="form-label">Price</label>
-            <input type="number" step="0.01" name="price" class="form-control" value="<?php echo $product['price']; ?>" required>
+            <input type="number" step="0.01" min="0.01" name="price" class="form-control" value="<?php echo h($product['price']); ?>" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Available Quantity</label>
+            <input type="number" name="availableQuantity" min="0" max="9999" class="form-control" value="<?php echo (int)($product['availableQuantity'] ?? 0); ?>" required>
+            <small class="text-muted">Set to 0 when the product is out of stock.</small>
         </div>
 
         <div class="mb-3">
             <label class="form-label">Description</label>
-            <textarea name="description" class="form-control" required><?php echo $product['description']; ?></textarea>
+            <textarea name="description" class="form-control" required><?php echo h($product['description']); ?></textarea>
         </div>
 
         <div class="mb-3">
@@ -125,3 +136,4 @@ if (isset($_POST['update'])) {
 
 </body>
 </html>
+
