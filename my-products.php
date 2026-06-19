@@ -53,6 +53,10 @@ $result = mysqli_query($conn, $sql);
         <div class="alert alert-success">Product deleted successfully.</div>
     <?php } ?>
 
+    <?php if (isset($_GET['success']) && $_GET['success'] == 'product_updated') { ?>
+        <div class="alert alert-success">Product updated successfully.</div>
+    <?php } ?>
+
     <?php if (mysqli_num_rows($result) > 0) { ?>
 
         <div class="row">
@@ -70,6 +74,12 @@ $result = mysqli_query($conn, $sql);
                             <h5><?php echo $product['title']; ?></h5>
 
                             <p>R<?php echo $product['price']; ?></p>
+
+                            <?php if ((int)($product['availableQuantity'] ?? 0) > 0) { ?>
+                                <p><strong>Available:</strong> <?php echo (int)$product['availableQuantity']; ?></p>
+                            <?php } else { ?>
+                                <p><span class="badge bg-danger">Out of Stock</span></p>
+                            <?php } ?>
 
                             <div class="d-flex gap-2 flex-wrap">
                                 <a href="<?php echo app_url('/edit-product.php?id=' . $product['productID']); ?>" class="btn btn-dark btn-sm">
