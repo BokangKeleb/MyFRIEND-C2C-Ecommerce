@@ -35,6 +35,8 @@ if (!$product) {
     die('Product not found.');
 }
 
+$availableQuantity = max(0, (int)($product['availableQuantity'] ?? 0));
+
 $isLoggedIn = isset($_SESSION['userID']);
 $isAdmin = (($_SESSION['role'] ?? '') === 'admin');
 $isOwnProduct = $isLoggedIn && (int)$_SESSION['userID'] === (int)$product['sellerID'];
@@ -69,6 +71,19 @@ $whatsappMessage = urlencode('Hi, I am interested in your product: ' . $product[
                 <p class="text-uppercase small text-muted mb-2"><?php echo h($product['category']); ?></p>
                 <h1><?php echo h($product['title']); ?></h1>
                 <h3 class="my-3">R<?php echo number_format((float)$product['price'], 2); ?></h3>
+
+                <?php if ($availableQuantity > 0): ?>
+                    <p><strong>Available Quantity:</strong> <?php echo $availableQuantity; ?></p>
+                <?php else: ?>
+                    <div class="alert alert-danger">Out of stock</div>
+                <?php endif; ?>
+
+                <?php if (($_GET['stock'] ?? '') === 'out'): ?>
+                    <div class="alert alert-warning">This product is currently out of stock.</div>
+                <?php elseif (($_GET['stock'] ?? '') === 'max'): ?>
+                    <div class="alert alert-warning">You already have the maximum available quantity in your cart.</div>
+                <?php endif; ?>
+
                 <p><?php echo nl2br(h($product['description'])); ?></p>
                 <p><strong>Shop:</strong> <?php echo h($product['shop_name']); ?></p>
                 <?php
@@ -148,6 +163,8 @@ $whatsappMessage = urlencode('Hi, I am interested in your product: ' . $product[
                     <button class="btn btn-secondary w-100" disabled>Admin View Only</button>
                 <?php elseif ($isOwnProduct): ?>
                     <button class="btn btn-secondary w-100" disabled>You cannot add your own product</button>
+                <?php elseif ($availableQuantity < 1): ?>
+                    <button class="btn btn-secondary w-100" disabled>Out of Stock</button>
                 <?php elseif (!$isLoggedIn): ?>
                     <a class="btn btn-shop" href="<?php echo app_url('/login.php'); ?>">Login to Add to Cart</a>
                 <?php else: ?>
@@ -159,7 +176,7 @@ $whatsappMessage = urlencode('Hi, I am interested in your product: ' . $product[
                         <div class="row g-2 align-items-end">
                             <div class="col-4">
                                 <label class="form-label">Quantity</label>
-                                <input type="number" name="quantity" min="1" max="99" value="1" class="form-control" required>
+                                <input type="number" name="quantity" min="1" max="<?php echo $availableQuantity; ?>" value="1" class="form-control" required>
                             </div>
                             <div class="col-8">
                                 <button type="submit" class="btn btn-shop">Add to Cart</button>
@@ -173,6 +190,9 @@ $whatsappMessage = urlencode('Hi, I am interested in your product: ' . $product[
 
     <?php include __DIR__ . '/includes/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
 </body>
 
 </html>
