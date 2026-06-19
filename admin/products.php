@@ -15,7 +15,13 @@ if ($_SESSION['role'] !== 'admin') {
     die("Access Denied");
 }
 
-$sql = "SELECT * FROM products";
+$sql = "SELECT
+            products.*,
+            users.email AS sellerEmail,
+            users.sellerPhone
+        FROM products
+        INNER JOIN users
+            ON products.sellerID = users.userID";
 
 $result = mysqli_query($conn, $sql);
 
@@ -69,6 +75,8 @@ $result = mysqli_query($conn, $sql);
 
                 <th>Price</th>
 
+                <th>Available</th>
+
                 <th>Action</th>
 
             </tr>
@@ -96,6 +104,12 @@ $result = mysqli_query($conn, $sql);
                     <td>
 
                         R<?php echo $product['price']; ?>
+
+                    </td>
+
+                    <td>
+
+                        <?php echo (int)($product['availableQuantity'] ?? 0); ?>
 
                     </td>
 
