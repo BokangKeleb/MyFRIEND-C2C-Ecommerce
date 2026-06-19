@@ -22,14 +22,29 @@ $productID = filter_input(INPUT_POST, 'productID', FILTER_VALIDATE_INT);
 $quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT);
 $returnTo = $_POST['returnTo'] ?? 'cart';
 
+function stock_redirect(int $productID, string $returnTo, string $reason): void
+{
+    if ($returnTo === 'shop') {
+        redirect_to('/products.php?cart=' . urlencode($reason));
+    }
+
+    redirect_to('/buy-product.php?id=' . $productID . '&stock=' . urlencode($reason));
+}
+
 if (!$productID) {
     redirect_to('/products.php?cart=invalid');
 }
 
-$quantity = $quantity && $quantity > 0 ? min($quantity, 99) : 1;
+$quantity = $quantity && $quantity > 0 ? $quantity : 1;
 $userID = (int)$_SESSION['userID'];
 
-$check = mysqli_prepare($conn, 'SELECT sellerID FROM products WHERE productID = ? LIMIT 1');
+$check = mysqli_prepare(
+    $conn,
+    'SELECT sellerID, availableQuantity
+     FROM products
+     WHERE productID = ?
+     LIMIT 1'
+);
 mysqli_stmt_bind_param($check, 'i', $productID);
 mysqli_stmt_execute($check);
 $product = mysqli_fetch_assoc(mysqli_stmt_get_result($check));
@@ -42,15 +57,15 @@ if ((int)$product['sellerID'] === $userID) {
     redirect_to('/products.php?cart=own');
 }
 
-$sql = 'INSERT INTO cart (userID, productID, quantity)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE quantity = LEAST(quantity + VALUES(quantity), 99)';
-$stmt = mysqli_prepare($conn, $sql);
-mysqli_stmt_bind_param($stmt, 'iii', $userID, $productID, $quantity);
-mysqli_stmt_execute($stmt);
+$availableQuantity = max(0, (int)($product['availableQuantity'] ?? 0));
 
-if ($returnTo === 'shop') {
-    redirect_to('/products.php?cart=added');
+if ($availableQuantity < 1) {
+    stock_redirect($productID, $returnTo, 'out');
 }
 
-redirect_to('/cart.php?added=1');
+$currentStmt = mysqli_prepare(
+    $conn,
+    'SELECT quantity
+     FROM cart
+     WHERE userID = ? AND productID = ?
+     LIMIT 1'
