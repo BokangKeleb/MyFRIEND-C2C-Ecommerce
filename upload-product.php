@@ -1,77 +1,70 @@
 <?php
 require_once __DIR__ . '/config/app.php';
 
-// Start session only if no session exists
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-// Include database connection
 include 'config/database.php';
 
-// Check if user is logged in
 if (!isset($_SESSION['userID'])) {
     redirect_to('/login.php');
 }
 
-// Prevent admin from selling products
 if ($_SESSION['role'] == 'admin') {
     die("Admins cannot sell products. Please use a personal seller account.");
 }
 
-// Store logged-in user ID
-$userID = $_SESSION['userID'];
+$userID = (int)$_SESSION['userID'];
 
-// Get logged-in user's shop details
 $userSQL = "SELECT shop_name, role FROM users WHERE userID = '$userID'";
 $userResult = mysqli_query($conn, $userSQL);
 $userData = mysqli_fetch_assoc($userResult);
 
-// If user has no shop name, send them to create shop first
 if (empty($userData['shop_name'])) {
     redirect_to('/create-shop.php');
 }
 
-// Store shop name from user account
 $shop_name = $userData['shop_name'];
 
-// Check if upload form was submitted
 if (isset($_POST['upload'])) {
 
-    // Get form values safely
-    $title = mysqli_real_escape_string($conn, $_POST['title']);
-    $description = mysqli_real_escape_string($conn, $_POST['description']);
-    $price = mysqli_real_escape_string($conn, $_POST['price']);
-    $category = mysqli_real_escape_string($conn, $_POST['category']);
+    $title = mysqli_real_escape_string($conn, trim($_POST['title'] ?? ''));
+    $description = mysqli_real_escape_string($conn, trim($_POST['description'] ?? ''));
+    $price = mysqli_real_escape_string($conn, trim($_POST['price'] ?? ''));
+    $category = mysqli_real_escape_string($conn, trim($_POST['category'] ?? ''));
+    $availableQuantity = filter_input(INPUT_POST, 'availableQuantity', FILTER_VALIDATE_INT);
 
-    // Get image details
-    $imageName = basename($_FILES['image']['name']);
-    $tempName = $_FILES['image']['tmp_name'];
-
-    // Add time to image name to avoid duplicate file names
-    $imageName = time() . "_" . $imageName;
-
-    // Set image upload path
-    $folder = "uploads/" . $imageName;
-
-    // Move image to uploads folder
-    if (move_uploaded_file($tempName, $folder)) {
-
-        // Insert product using sellerID and shop name from the user account
-        $sql = "INSERT INTO products
-                (title, description, price, image, category, shop_name, sellerID)
-                VALUES
-                ('$title', '$description', '$price', '$imageName', '$category', '$shop_name', '$userID')";
-
-        $result = mysqli_query($conn, $sql);
-
-        if ($result) {
-            $message = "Product uploaded successfully.";
-        } else {
-            $error = "Product could not be saved.";
-        }
+    if ($title === '' || $description === '' || $price === '' || $category === '') {
+        $error = 'Please complete all product details.';
+    } elseif (!$availableQuantity || $availableQuantity < 1) {
+        $error = 'Please enter an available quantity of at least 1.';
+    } elseif ($availableQuantity > 9999) {
+        $error = 'The available quantity is too high.';
+    } elseif (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        $error = 'Please upload a product image.';
     } else {
-        $error = "Image upload failed.";
+        $imageName = basename($_FILES['image']['name']);
+        $tempName = $_FILES['image']['tmp_name'];
+        $imageName = time() . "_" . $imageName;
+        $folder = "uploads/" . $imageName;
+
+        if (move_uploaded_file($tempName, $folder)) {
+            $sql = "INSERT INTO products
+                    (title, description, price, availableQuantity, image, category, shop_name, sellerID)
+                    VALUES
+                    ('$title', '$description', '$price', '$availableQuantity', '$imageName', '$category', '$shop_name', '$userID')";
+
+            $result = mysqli_query($conn, $sql);
+
+            if ($result) {
+                $message = "Product uploaded successfully.";
+            } else {
+                $error = "Product could not be saved.";
+            }
+        } else {
+            $error = "Image upload failed.";
+        }
     }
 }
 
@@ -102,14 +95,14 @@ if (isset($_POST['upload'])) {
 
         <h1 class="mb-4">Upload Product</h1>
 
-        <p class="mb-4">Shop: <strong><?php echo $shop_name; ?></strong></p>
+        <p class="mb-4">Shop: <strong><?php echo h($shop_name); ?></strong></p>
 
         <?php if (isset($message)) { ?>
-            <div class="alert alert-success"><?php echo $message; ?></div>
+            <div class="alert alert-success"><?php echo h($message); ?></div>
         <?php } ?>
 
         <?php if (isset($error)) { ?>
-            <div class="alert alert-danger"><?php echo $error; ?></div>
+            <div class="alert alert-danger"><?php echo h($error); ?></div>
         <?php } ?>
 
         <form method="POST" enctype="multipart/form-data">
@@ -126,7 +119,13 @@ if (isset($_POST['upload'])) {
 
             <div class="mb-3">
                 <label class="form-label">Price</label>
-                <input type="number" step="0.01" name="price" class="form-control" required>
+                <input type="number" step="0.01" min="0.01" name="price" class="form-control" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Available Quantity</label>
+                <input type="number" name="availableQuantity" min="1" max="9999" value="1" class="form-control" required>
+                <small class="text-muted">Buyers will not be able to buy more than this quantity.</small>
             </div>
 
             <div class="mb-3">
